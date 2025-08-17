@@ -4,41 +4,49 @@
 #include "uart0.h"
 #include "semphr.h"
 
+// Task function declarations
 void task1(void *q);
 void task2(void *a);
 
-
-xSemaphoreHandle binarysem;
+xSemaphoreHandle binarysem; // Binary semaphore handle
 
 int main(void)
 {
-  
-  UART0_CONFIG();
-  binarysem=xSemaphoreCreateBinary();
-  xTaskCreate(task1,"task1",128,NULL,1,NULL);
-  xTaskCreate(task2,"task2",128,NULL,1,NULL);
-	xSemaphoreGive(binarysem);
-  vTaskStartScheduler();
-  while(1);
-}
-void task1(void *q)
-{  
-  while(1) 
-	{  
-    xSemaphoreTake(binarysem,portMAX_DELAY);
-    uart_string("Task1 functioning\r\n");
-    xSemaphoreGive(binarysem);
-    vTaskDelay(100);
-  }
+    UART0_CONFIG(); // Initialize UART0 for printing messages
+
+    // Create a binary semaphore
+    binarysem = xSemaphoreCreateBinary();
+
+    // Create two tasks with same priority
+    xTaskCreate(task1, "task1", 128, NULL, 1, NULL);
+    xTaskCreate(task2, "task2", 128, NULL, 1, NULL);
+
+    xSemaphoreGive(binarysem); // Give initial semaphore so one task can start
+
+    vTaskStartScheduler(); // Start FreeRTOS scheduler
+    while(1); // Should never reach here
 }
 
+// Task 1 function
+void task1(void *q)
+{  
+    while(1) 
+    {  
+        xSemaphoreTake(binarysem, portMAX_DELAY);  // Wait for semaphore
+        uart_string("Task1 functioning\r\n");      // Print message via UART
+        xSemaphoreGive(binarysem);                 // Release semaphore
+        vTaskDelay(100);                           // Delay for 100 ticks
+    }
+}
+
+// Task 2 function
 void task2(void *a)
 {
-  while(1) 
-	{
-    xSemaphoreTake(binarysem,portMAX_DELAY);
-    uart_string("Task2 functioning\r\n");
-    xSemaphoreGive(binarysem);
-    vTaskDelay(100);
-  }
+    while(1) 
+    {
+        xSemaphoreTake(binarysem, portMAX_DELAY);  // Wait for semaphore
+        uart_string("Task2 functioning\r\n");      // Print message via UART
+        xSemaphoreGive(binarysem);                 // Release semaphore
+        vTaskDelay(100);                           // Delay for 100 ticks
+    }
 }
