@@ -1,0 +1,2 @@
+../Core/Src/freertos.c:62:13:vApplicationMallocFailedHook	1
+../Core/Src/freertos.c:81:6:vApplicationGetIdleTaskMemory	1
