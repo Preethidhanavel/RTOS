@@ -48,11 +48,12 @@ UART_HandleTypeDef huart2;
 
 osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
+
 // Declare task handles
-TaskHandle_t taskhandle1 = NULL;
-TaskHandle_t taskhandle2 = NULL;
-TaskHandle_t taskhandle3 = NULL;
-TaskHandle_t taskhandle4 = NULL;
+TaskHandle_t taskhandle1 =NULL;
+TaskHandle_t taskhandle2 =NULL;
+TaskHandle_t taskhandle3 =NULL;
+TaskHandle_t taskhandle4 =NULL;
 
 // Declare queue handles
 QueueHandle_t cmd_q = NULL;   // Queue for command messages
@@ -66,18 +67,19 @@ typedef struct {
 
 // Buffer to store command input from UART
 uint8_t cmd_buf[20];
-uint8_t cmd_len = 0;  // Keeps track of command length
+uint8_t cmd_len = 0;
 
 // Menu string that will be sent to UART for user
-char menu[] = "\r\nLED_ON ->1\r\nLED_OFF ->2\r\nLED_TOGGLE ->3\
-		\r\nLED_TOGGLE_OFF ->4\r\nLED_READ_STATUS ->5\r\nRTC_PRINT ->6\
+char menu[]="\r\nLED_ON ->1\r\nLED_OFF ->2\r\nLED_TOGGLE ->3\
+		\r\nLED_READ_STATUS ->4\r\nRTC_PRINT ->5\
 		\r\nEXIT ->0\r\nENTER YOUR OPTION:";
 
 // Define command macros for easy reference
-#define LED_ON        1
-#define LED_OFF       2
-#define RTC_READ      3
-
+#define LED_ON 	1
+#define	LED_OFF 2
+#define LED_TOGGLE 3
+#define LED_READ_STATUS 4
+#define RTC_READ 5
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -93,13 +95,17 @@ uint8_t getCommandCode(uint8_t *buffer);
 //prototypes command helper functions
 void make_led_on(void);
 void make_led_off(void);
+void led_toggle(void);
+void read_led_status(char *task_msg);
 void read_rtc_info(char *task_msg);
 void print_error_message(char *task_msg);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
 uint8_t rx_byte;
+
 // UART receive complete interrupt callback (called when a byte is received)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
@@ -178,36 +184,43 @@ void task2_command(void *p)
     }
 }
 
-// Task 3: Processes commands received from Task 2
 void task3_command_process(void *p)
 {
-    cmd_t *new_cmd;
-    char task_msg[50];
+    cmd_t *new_cmd;         // Pointer to hold received command
+    char task_msg[50];      // Buffer to store messages (like LED/RTC info)
 
-    while(1)
+    while(1)                // Infinite loop (task runs forever)
     {
-        // Wait for command from queue
+        // Wait until a command is received from the queue (blocking)
         xQueueReceive(cmd_q, (void*)&new_cmd, portMAX_DELAY);
 
-        // Process based on command code
+        // Process command based on cmd_no
         if(new_cmd->cmd_no == LED_ON)
         {
-            make_led_on();
+            make_led_on();  // Turn LED ON
         }
         else if(new_cmd->cmd_no == LED_OFF)
         {
-            make_led_off();
+            make_led_off(); // Turn LED OFF
+        }
+        else if(new_cmd->cmd_no == LED_TOGGLE)
+        {
+            led_toggle();   // Toggle LED ON/OFF
+        }
+        else if(new_cmd->cmd_no == LED_READ_STATUS)
+        {
+            read_led_status(task_msg); // Read LED status into task_msg
         }
         else if(new_cmd->cmd_no == RTC_READ)
         {
-            read_rtc_info(task_msg);   // Read RTC and send message
+            read_rtc_info(task_msg);   // Read RTC info into task_msg
         }
         else
         {
-            print_error_message(task_msg); // Invalid command
+            print_error_message(task_msg); // Handle invalid command
         }
 
-        // Free allocated memory after processing
+        // Free the dynamically allocated command memory
         vPortFree(new_cmd);
     }
 }
@@ -246,11 +259,44 @@ void make_led_off(void)
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, RESET);
 }
 
+void led_toggle(void)
+{
+    // Toggle LED 20 times with 500ms delay
+    for(uint8_t i = 0; i < 20; i++)
+    {
+        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);   // Toggle LED on pin PA5
+        vTaskDelay(pdMS_TO_TICKS(500));          // Delay 500 ms (FreeRTOS delay)
+    }
+}
+//Read LED status
+void read_led_status(char *task_msg)
+{
+	sprintf(task_msg , "\r\nLED status is : %d\r\n", HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5));
+	xQueueSend(uart_q,&task_msg,portMAX_DELAY);//write the LED status to Queue
+}
+
 // Reads RTC time/date and sends to UART queue
 void read_rtc_info(char *task_msg)
 {
     RTC_TimeTypeDef sTime = {0};  // Structure to store RTC time
     RTC_DateTypeDef sDate = {0};  // Structure to store RTC date
+    if ((RTC->ISR & RTC_ISR_INITS) == 0)
+      {
+        //RTC not yet initialized. Setting time and date...
+       // Set default time: 11:15:30
+        sTime.Hours = 9;
+        sTime.Minutes = 15;
+        sTime.Seconds = 30;
+        sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+        sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+        HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+        // Set default date: Friday, 29-Aug-2025
+        sDate.WeekDay = RTC_WEEKDAY_FRIDAY;
+        sDate.Month = RTC_MONTH_AUGUST;
+        sDate.Date = 20;
+        sDate.Year = 25;
+        HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+      }
 
     // Read current RTC time and date
     HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
@@ -334,35 +380,35 @@ int main(void)
   /* USER CODE BEGIN RTOS_THREADS */
   uart_send("queue\r\n");   // Send a test message over UART
 
-  // Create a queue to store 'cmd_t' type data, with a maximum of 10 items
-  cmd_q = xQueueCreate(10, sizeof(cmd_t));
+    // Create a queue to store 'cmd_t' type data, with a maximum of 10 items
+    cmd_q = xQueueCreate(10, sizeof(cmd_t));
 
-  // Create another queue to store 8-byte messages, with a maximum of 10 items
-  uart_q = xQueueCreate(10, 8);
+    // Create another queue to store 8-byte messages, with a maximum of 10 items
+    uart_q = xQueueCreate(10, 8);
 
-  // Check if both queues were created successfully
-  if((cmd_q != NULL) && (uart_q != NULL))
-  {
-      // Create Task 1: Menu handling task
-      xTaskCreate(task1_menu, "MENU", configMINIMAL_STACK_SIZE, NULL, 1, &taskhandle1);
+    // Check if both queues were created successfully
+    if((cmd_q != NULL) && (uart_q != NULL))
+    {
+        // Create Task 1: Menu handling task
+        xTaskCreate(task1_menu, "MENU", configMINIMAL_STACK_SIZE, NULL, 1, &taskhandle1);
 
-      // Create Task 2: Command handling task
-      xTaskCreate(task2_command, "command_handle", configMINIMAL_STACK_SIZE, NULL, 2, &taskhandle2);
+        // Create Task 2: Command handling task
+        xTaskCreate(task2_command, "command_handle", configMINIMAL_STACK_SIZE, NULL, 2, &taskhandle2);
 
-      // Create Task 3: Command processing task
-      xTaskCreate(task3_command_process, "command_process", configMINIMAL_STACK_SIZE, NULL, 2, &taskhandle3);
+        // Create Task 3: Command processing task
+        xTaskCreate(task3_command_process, "command_process", configMINIMAL_STACK_SIZE, NULL, 2, &taskhandle3);
 
-      // Create Task 4: UART transmission task
-      xTaskCreate(task4_uart_transmit, "uart_transmit", configMINIMAL_STACK_SIZE, NULL, 2, &taskhandle4);
+        // Create Task 4: UART transmission task
+        xTaskCreate(task4_uart_transmit, "uart_transmit", configMINIMAL_STACK_SIZE, NULL, 2, &taskhandle4);
 
-      // Start UART reception in interrupt mode (receive 1 byte at a time)
-      HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
-  }
-  else
-  {
-      // If queue creation failed, notify via UART
-      uart_send("QUEUE creation failed\r\n");
-  }
+        // Start UART reception in interrupt mode (receive 1 byte at a time)
+        HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+    }
+    else
+    {
+        // If queue creation failed, notify via UART
+        uart_send("QUEUE creation failed\r\n");
+    }
 
   /* USER CODE END RTOS_THREADS */
 
